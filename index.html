@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Yuya Nakada — Payments &amp; Digital Identity</title>
+  <meta name="description" content="Independent writings on EMV 3-D Secure, Verifiable Credentials, and payment security from an APAC practitioner." />
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+<div class="site-wrapper">
+
+  <!-- ── Header ──────────────────────────────────────────── -->
+  <header class="site-header">
+    <nav class="site-nav">
+      <a href="/" class="site-name">Yuya Nakada</a>
+      <ul class="nav-links">
+        <li><a href="/" class="active">About</a></li>
+        <li><a href="#writing">Writing</a></li>
+        <!-- Add more pages here as needed -->
+      </ul>
+    </nav>
+  </header>
+
+  <!-- ── Main ────────────────────────────────────────────── -->
+  <main>
+
+    <!-- About -->
+    <section class="about-block">
+      <p class="section-label">About</p>
+      <p>
+        I work on payment security and digital identity infrastructure in Japan and the broader APAC region.
+        My focus is the intersection of <strong>EMV 3-D Secure</strong>, <strong>W3C Verifiable Credentials</strong>,
+        and how cryptographic trust models can improve data quality and privacy in payment authentication.
+      </p>
+      <p>
+        I am an individual subscriber of <a href="https://www.emvco.com" target="_blank" rel="noopener">EMVCo</a>
+        and follow the development of payment security standards across EMVCo, the
+        <a href="https://www.w3.org/groups/cg/webpayments-ig/" target="_blank" rel="noopener">W3C Secure Payment Confirmation CG</a>,
+        and the <a href="https://www.w3.org/groups/wg/vc/" target="_blank" rel="noopener">W3C Verifiable Credentials WG</a>.
+        I am particularly interested in the gap between EU-centric digital identity frameworks such as eIDAS 2.0 / EUDI Wallet
+        and the implementation realities in APAC markets including Japan's Trusted Web initiative.
+      </p>
+      <p>
+        I write here to think out loud on technical and strategic questions that interest me.
+        These are personal views and do not represent any employer or standards body.
+      </p>
+      <div class="tag-list">
+        <span class="tag">EMV 3-D Secure</span>
+        <span class="tag">Verifiable Credentials</span>
+        <span class="tag">OID4VP</span>
+        <span class="tag">SPC</span>
+        <span class="tag">eIDAS 2.0</span>
+        <span class="tag">EUDI Wallet</span>
+        <span class="tag">Japan Trusted Web</span>
+        <span class="tag">Payment Security</span>
+        <span class="tag">APAC</span>
+      </div>
+    </section>
+
+    <!-- Writing -->
+    <section id="writing">
+      <p class="section-label">Writing</p>
+      <ul class="writing-list">
+
+        <li class="writing-item">
+          <div class="writing-item-meta">2025-05 &nbsp;·&nbsp; EMV 3DS &nbsp;·&nbsp; Verifiable Credentials</div>
+          <h3>
+            <a href="posts/3ds-vc-proposal.html">
+              Toward Cryptographic Trust in 3D Secure: VP Tokens as a Carrier for 3DS Requestor Authentication Data
+            </a>
+          </h3>
+          <p>
+            EMVCo's EUDI Wallet Integration White Paper explicitly leaves three items unresolved in Chapter 5.
+            This piece proposes using W3C Verifiable Presentations (OID4VP) to fill those gaps —
+            within existing specification fields — and examines APAC applicability.
+          </p>
+        </li>
+
+        <!-- Future articles go here.
+             Copy the <li class="writing-item"> block above and update the content. -->
+
+      </ul>
+    </section>
+
+  </main>
+
+  <!-- ── Footer ──────────────────────────────────────────── -->
+  <footer class="site-footer">
+    <div class="footer-inner">
+      <ul class="footer-links">
+        <li><a href="https://www.linkedin.com/in/yuya-nakada-a0a177408" target="_blank" rel="noopener">LinkedIn</a></li>
+        <li><a href="https://github.com/nakada-yuya-vc" target="_blank" rel="noopener">GitHub</a></li>
+        <!-- Optional: <li><a href="https://x.com/[your-handle]" target="_blank" rel="noopener">X / Twitter</a></li> -->
+      </ul>
+      <span class="footer-copy">&copy; 2026 Yuya Nakada</span>
+    </div>
+  </footer>
+
+</div>
+
+</body>
+</html>
