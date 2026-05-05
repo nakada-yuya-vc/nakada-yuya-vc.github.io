@@ -1,0 +1,504 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Toward Cryptographic Trust in 3D Secure — Yuya Nakada</title>
+  <meta name="description" content="A proposal to use W3C Verifiable Presentations (OID4VP) as a carrier format within the existing 3DS Requestor Authentication Data field, addressing the unresolved items in EMVCo's EUDI Wallet Integration White Paper." />
+  <link rel="stylesheet" href="../style.css" />
+</head>
+<body>
+
+<div class="site-wrapper">
+
+  <!-- ── Header ──────────────────────────────────────────── -->
+  <header class="site-header">
+    <nav class="site-nav">
+      <a href="/" class="site-name">Yuya Nakada</a>
+      <ul class="nav-links">
+        <li><a href="/">About</a></li>
+        <li><a href="/#writing" class="active">Writing</a></li>
+      </ul>
+    </nav>
+  </header>
+
+  <!-- ── Article ─────────────────────────────────────────── -->
+  <main>
+    <article>
+
+      <header class="article-header">
+        <a href="/" class="article-back">← Back</a>
+        <h1>Toward Cryptographic Trust in 3D Secure:<br>VP Tokens as a Carrier for 3DS Requestor Authentication Data</h1>
+        <div class="article-meta">
+          <span>May 2026</span>
+          <span>EMV 3DS · Verifiable Credentials · OID4VP</span>
+          <span>~2,800 words</span>
+        </div>
+      </header>
+
+      <div class="article-abstract">
+        <p>
+          EMVCo's EUDI Wallet Integration White Paper v1.0 (June 2025) identifies several unresolved items in Chapter 5
+          regarding how wallet-attested identity attributes should flow into the 3DS authentication process.
+          This article proposes using W3C Verifiable Presentations (VP Tokens via OID4VP) as a carrier format
+          within the existing <code>threeDSRequestorAuthenticationInfo</code> field,
+          and examines how this approach addresses the identified gaps while extending naturally
+          to APAC digital identity frameworks beyond EUDI.
+          The views expressed here are personal and do not represent any employer or standards body.
+        </p>
+      </div>
+
+      <div class="article-body">
+
+        <!-- ─────────────────────────────────────────────── -->
+        <h2>1. The Data Quality Problem in EMV 3-D Secure</h2>
+
+        <p>
+          In the current EMV 3-D Secure 2.x flow, the merchant (3DS Requestor) populates the
+          Authentication Request (AReq) message with a set of cardholder attributes — shipping address,
+          billing address, phone number, email, account age, and so on — and sends them to the
+          Access Control Server (ACS) operated by the issuer. The ACS incorporates these attributes
+          into its risk scoring model to decide whether to approve frictionlessly, step up with OTP,
+          or decline.
+        </p>
+
+        <p>
+          The fundamental problem is that all of these attributes are <em>merchant-declared assertions</em>.
+          The ACS has no mechanism to verify that the address the merchant sends matches a record
+          signed by a trusted party. Several concrete issues follow:
+        </p>
+
+        <ul>
+          <li>
+            <strong>No provenance.</strong> A shipping address of "1-2-3 Shinjuku, Tokyo" carries no signal
+            about who attested it or when. It could be self-reported at account creation three years ago
+            and never validated since.
+          </li>
+          <li>
+            <strong>No freshness.</strong> The 3DS data model does not express when an attribute was last confirmed.
+            A stale address and a freshly verified one look identical to the ACS.
+          </li>
+          <li>
+            <strong>Input friction at checkout.</strong> When merchants ask cardholders to manually enter
+            attributes — addresses and phone numbers in particular — the entry step itself becomes a
+            drop-off point. On mobile, hand-typed address fields directly affect conversion rates,
+            creating a tension between the data the protocol demands and the checkout experience
+            merchants need.
+          </li>
+          <li>
+            <strong>Format variance.</strong> Free-text address fields suffer from inconsistency across markets,
+            input methods, and character sets, complicating automated matching logic on the ACS and
+            3DS vendor side.
+          </li>
+          <li>
+            <strong>GDPR tension.</strong> Article 5(1)(c) of the GDPR requires data minimisation: personal data
+            should be adequate, relevant, and limited to what is necessary. Sending a full address, phone number,
+            and email — when only a postal code or an age predicate would suffice for risk assessment — sits
+            uncomfortably with this requirement. Merchants are currently compelled to collect and store this
+            PII primarily because the 3DS protocol demands it, creating a compliance burden that provides
+            diminishing fraud-reduction value.
+          </li>
+        </ul>
+
+        <p>
+          None of these are new observations. The EMV 3-D Secure specification authors have been aware of
+          the provenance gap for some time, which is why the Attribute Verification Message Extension
+          (Section 6.5 of the 3DS White Paper v2.0, March 2025) exists: it provides a structured way for
+          the ACS to request and receive verification results for age, nationality, government ID number,
+          and name. But that extension still relies on the ACS itself (or a downstream party) to perform
+          the verification, rather than accepting pre-verified credentials from a trusted external issuer.
+        </p>
+
+        <!-- ─────────────────────────────────────────────── -->
+        <h2>2. What EMVCo's Own Documents Tell Us</h2>
+
+        <p>
+          EMVCo's EUDI Wallet Integration White Paper v1.0 (published June 2025) addresses the integration
+          of digital identity wallets with EMV 3DS, focusing on EUDI Wallet scenarios expected to gain
+          traction in the EU. The document describes two integration patterns:
+        </p>
+
+        <ul>
+          <li>
+            <strong>Merchant-Captured flow:</strong> The merchant's checkout page invokes the wallet,
+            obtains a Verifiable Presentation, and includes the wallet-attested data in the AReq.
+          </li>
+          <li>
+            <strong>Issuer-Captured flow:</strong> The ACS directly invokes the wallet during the
+            challenge step, analogous to how some issuers currently redirect to a banking app for authentication.
+          </li>
+        </ul>
+
+        <p>
+          Chapter 5 ("Next Steps") of that white paper is notably candid. It explicitly identifies
+          the following as unresolved:
+        </p>
+
+        <div class="callout">
+          <div class="callout-label">EMVCo EUDI White Paper — Chapter 5 Open Items (paraphrased)</div>
+          <p>
+            (1) How the ACS identifies EUDI Wallet-derived data in the Merchant-Captured flow is not yet specified.
+            (2) The precise format for 3DS Requestor Authentication Data when carrying wallet-attested attributes
+            is undefined — the document notes only that "more precise data might be useful for the ACS."
+            (3) ACS implementation guidance for the Issuer-Captured flow is not provided.
+            (4) iFrame sandbox restrictions (<code>allow-popups: Not allowed</code> in v2.3.1.1) prevent
+            Universal App Link invocation of the wallet from within the standard 3DS method frame.
+          </p>
+        </div>
+
+        <p>
+          Items (1), (2), and (3) are directly addressable by specifying a concrete carrier format
+          for wallet-attested data within the existing 3DS message structure. Item (4) is a browser
+          security constraint that requires a separate solution (possibly at the 3DS SDK or redirect-flow level)
+          and is out of scope for this article.
+        </p>
+
+        <!-- ─────────────────────────────────────────────── -->
+        <h2>3. The Proposal: VP Tokens via OID4VP as the Carrier Format</h2>
+
+        <h3>3.1 Core idea</h3>
+
+        <p>
+          The proposal is to use a <strong>W3C Verifiable Presentation (VP Token)</strong> — exchanged via
+          <a href="https://openid.net/specs/openid-4-verifiable-presentations-1_0.html" target="_blank" rel="noopener">OpenID for Verifiable Presentations (OID4VP)</a> —
+          as the data format for wallet-attested attributes carried in the AReq.
+          This is not a replacement of existing AReq data elements; it is an
+          <em>optional, backward-compatible extension</em> that provides the ACS with an additional,
+          cryptographically verifiable signal alongside the conventional merchant-declared fields.
+          An alternative approach — mapping VP Token-derived attributes directly onto existing AReq
+          fields — is also conceivable, but would require far more disruptive changes to the message
+          structure and is treated here as a separate line of investigation.
+        </p>
+
+        <p>
+          The flow in the Merchant-Captured pattern would be:
+        </p>
+
+        <ol>
+          <li>During checkout, the merchant's 3DS SDK initiates an OID4VP presentation request targeting the cardholder's wallet (EUDI Wallet, Japan Trusted Web wallet, or equivalent).</li>
+          <li>The wallet presents a VP Token — a signed bundle of Verifiable Credentials — disclosing only the attributes required (e.g., postal code, age ≥ 18 as a Boolean claim, or a cryptographic commitment to the full address).</li>
+          <li>The merchant serialises the VP Token (a compact JSON or SD-JWT-VC structure) and places it in the <code>threeDSRequestorAuthenticationInfo</code> field of the AReq, together with a new Authentication Method value indicating "VP Token / Electronic ID Wallet."</li>
+          <li>The ACS receives the AReq, detects the VP Token carrier, validates the cryptographic signature chain (Credential Issuer → VP → Presentation), and incorporates the verified attributes into its risk model.</li>
+        </ol>
+
+        <h3>3.2 Credential format: SD-JWT-VC</h3>
+
+        <p>
+          The IETF SD-JWT-VC draft (<code>draft-ietf-oauth-sd-jwt-vc</code>) is the most suitable credential
+          format for this use case. Its key properties are:
+        </p>
+
+        <ul>
+          <li>
+            <strong>Selective Disclosure.</strong> The holder can disclose only the claims the verifier needs.
+            For 3DS, this enables the wallet to present only a postal code (for address matching) or an age
+            predicate (for age-gated merchants) rather than a full PII dump.
+          </li>
+          <li>
+            <strong>Issuer-signed.</strong> The SD-JWT is signed by the Credential Issuer's key,
+            allowing the ACS to verify provenance without querying the issuer at transaction time.
+          </li>
+          <li>
+            <strong>Expiry and status.</strong> The <code>exp</code> claim and an optional
+            <code>status</code> endpoint (Token Status List, RFC draft) allow the ACS to assess freshness
+            and check for revocation — something entirely absent from current merchant-declared attributes.
+          </li>
+          <li>
+            <strong>Compact encoding.</strong> An SD-JWT-VC disclosing two or three claims typically serialises
+            to well under 2 KB, comfortable within the 50,000-character capacity of the
+            <code>threeDSRequestorAuthenticationInfo</code> field.
+          </li>
+        </ul>
+
+        <h3>3.3 Addressing the Attribute Verification Message Extension</h3>
+
+        <p>
+          The Attribute Verification Message Extension (Section 6.5 of the 3DS White Paper v2.0) currently
+          supports four attribute types: age, nationality, government ID number, and name.
+          In the existing design, the ACS is expected to perform or commission the verification itself.
+        </p>
+
+        <p>
+          A VP Token changes this model: the merchant can submit a <em>pre-verified</em> credential
+          as the evidence for the ACS's attribute verification decision. The ACS role shifts from
+          "verifier" to "validator of a third-party verification" — a role it is already familiar with
+          from accepting external risk scores from fraud data networks. For the age verification case,
+          the ACS would receive a Boolean disclosure (<code>"age_over_18": true</code>) signed by the
+          wallet issuer, rather than a raw birthdate requiring in-house computation.
+        </p>
+
+        <!-- ─────────────────────────────────────────────── -->
+        <h2>4. Fit with the Existing Specification</h2>
+
+        <p>
+          A deliberate constraint in this proposal is that it should require <em>no new message fields</em>
+          in the core 3DS specification for an initial implementation. Two existing hooks make this possible.
+        </p>
+
+        <h3>4.1 threeDSRequestorAuthenticationInfo (field 3DS_REQ_AUTH_INFO)</h3>
+
+        <p>
+          This field was introduced to carry structured information about how the 3DS Requestor authenticated
+          the cardholder prior to initiating the transaction. As of v2.3.1.1, it accepts up to 50,000
+          characters — sufficient to carry a compact VP Token with selective disclosures.
+          The field is currently used for FIDO assertion data and eIDAS/EUDI Wallet data in pilot implementations.
+        </p>
+
+        <h3>4.2 Authentication Method value 10 — Electronic ID</h3>
+
+        <p>
+          EMVCo added Authentication Method value <code>10</code> ("Electronic ID") in v2.3.1.1, explicitly
+          anticipating EUDI Wallet scenarios. This value signals to the ACS that the authentication data
+          in the accompanying field was derived from an electronic identity document or wallet.
+          A VP Token-carrying flow would set this value, enabling the ACS to apply the correct
+          parsing and validation logic without breaking existing implementations that use other method values.
+        </p>
+
+        <h3>4.3 Backward compatibility</h3>
+
+        <p>
+          Because the VP Token is an optional additive element rather than a replacement:
+        </p>
+        <ul>
+          <li>Merchants that cannot invoke a wallet fall back to the existing AReq structure unchanged (Layer 3 in the architecture).</li>
+          <li>ACS implementations that do not yet support VP Token validation treat the field as opaque and proceed with conventional risk scoring.</li>
+          <li>No change is required to the Directory Server (DS) message routing layer in this initial design — the VP Token travels as a payload within existing message boundaries.</li>
+        </ul>
+
+        <p>
+          A three-layer fallback architecture emerges naturally:
+        </p>
+
+        <table>
+          <thead>
+            <tr>
+              <th>Layer</th>
+              <th>Cardholder State</th>
+              <th>Authentication Path</th>
+              <th>Data Sent</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>1</td>
+              <td>SPC-capable browser + wallet enrolled</td>
+              <td>SPC + VP Token</td>
+              <td>FIDO assertion + SD-JWT-VC disclosure</td>
+            </tr>
+            <tr>
+              <td>2</td>
+              <td>Wallet enrolled, SPC not supported</td>
+              <td>Existing 3DS + VP Token</td>
+              <td>Existing AReq fields + SD-JWT-VC disclosure</td>
+            </tr>
+            <tr>
+              <td>3</td>
+              <td>No wallet</td>
+              <td>Existing 3DS</td>
+              <td>Existing AReq fields only</td>
+            </tr>
+          </tbody>
+        </table>
+
+        <!-- ─────────────────────────────────────────────── -->
+        <h2>5. Benefits for Each Party in the Ecosystem</h2>
+
+        <h3>5.1 Issuers / ACS operators</h3>
+        <p>
+          The quality of risk signals improves from <em>many low-quality declarations</em> to
+          <em>few high-quality, cryptographically attested attributes</em>. An address verified by a bank
+          or government agency at a known point in time is a categorically stronger signal than a
+          merchant-supplied string. Fresher, more reliable attributes should translate into higher
+          frictionless approval rates and lower fraud rates — the primary commercial levers for issuers.
+        </p>
+
+        <h3>5.2 Merchants / 3DS Requestors</h3>
+        <p>
+          Merchants currently collect and store substantial cardholder PII primarily to satisfy AReq requirements.
+          In a VP Token flow, the merchant acts as a pass-through: the wallet generates the VP Token and
+          the merchant forwards it. The merchant never sees — and therefore does not need to store — the
+          underlying credential data. This removes a significant source of GDPR liability and reduces
+          the scope of PCI DSS cardholder data environments.
+        </p>
+        <p>
+          There is a second, more immediate benefit: checkout conversion. The current model requires
+          merchants to prompt cardholders for manual attribute entry — addresses and phone numbers in
+          particular — solely to populate AReq fields. In a VP Token flow, the wallet supplies these
+          attributes programmatically, eliminating the manual entry step that is a known drop-off point
+          on mobile. Reducing friction at the point of attribute collection directly benefits merchant
+          conversion rates, giving merchants a concrete commercial incentive to adopt wallet-based flows
+          independently of the compliance argument.
+        </p>
+
+        <h3>5.3 Cardholders</h3>
+        <p>
+          Selective disclosure means the cardholder shares the minimum necessary. For a domestic transaction
+          requiring only address-country verification, the wallet discloses a country code; it does not
+          expose street-level data. The cardholder retains meaningful control over what is revealed per transaction,
+          aligned with the consent model envisioned by eIDAS 2.0 and the GDPR.
+        </p>
+
+        <h3>5.4 The credential issuer ecosystem</h3>
+        <p>
+          For entities operating identity wallets — governments, banks, telcos — successful integration
+          into the 3DS flow creates immediate utility for their credentials at checkout. This is a concrete
+          use case that drives wallet adoption, which in turn increases the value of the credential ecosystem.
+          The EUDI Wallet rollout across EU member states from 2026 makes this timing particularly relevant.
+        </p>
+
+        <!-- ─────────────────────────────────────────────── -->
+        <h2>6. APAC Considerations: Beyond the EUDI Frame</h2>
+
+        <p>
+          The EMVCo EUDI Wallet White Paper is explicitly scoped to EU implementation. APAC is not mentioned.
+          Yet the underlying problem — unverified merchant-declared attributes in AReq — is equally
+          present in APAC markets, and several APAC jurisdictions have active digital identity initiatives
+          that could serve as credential issuers in this model.
+        </p>
+
+        <p>
+          <strong>Japan — Trusted Web.</strong> The Cabinet Secretariat's Trusted Web initiative
+          defines a trust framework for verifiable data exchange, with the digital My Number Card as
+          a potential foundational credential. The same SD-JWT-VC format recommended here is compatible
+          with the W3C VC Data Model that Trusted Web references.
+          Japan's domestic card schemes and issuer ecosystem are well-positioned to pilot a VP Token
+          flow using My Number Card-derived credentials as the issuer layer.
+        </p>
+
+        <p>
+          <strong>Singapore — National Digital Identity (NDI / Singpass).</strong>
+          Singpass already supports selective attribute disclosure via its "Myinfo" API.
+          A VP Token-based flow would be architecturally consistent with Singpass's existing
+          credential issuance model and could be incorporated into 3DS flows without requiring
+          a new national identity infrastructure.
+        </p>
+
+        <p>
+          <strong>Korea, Australia, and others</strong> have comparable programmes at various stages.
+          The point is not that every market should implement simultaneously, but that the carrier format
+          (VP Token / SD-JWT-VC) and the field mapping (<code>threeDSRequestorAuthenticationInfo</code>)
+          can be defined once in a jurisdiction-neutral way and adopted by each market using its own
+          credential issuer layer.
+        </p>
+
+        <p>
+          An APAC-originated contribution to this space is valuable precisely because the current
+          specification conversation is dominated by EU implementation considerations.
+          A concrete technical proposal that demonstrates APAC applicability — backed by real ecosystem
+          knowledge of Japan and Singapore — strengthens the case for a universally applicable solution
+          rather than an EU-specific annex.
+        </p>
+
+        <!-- ─────────────────────────────────────────────── -->
+        <h2>7. Open Questions</h2>
+
+        <p>
+          This proposal leaves several important questions unresolved, which I believe warrant
+          structured investigation — ideally through a proof-of-concept implementation and dialogue
+          with the relevant standards bodies.
+        </p>
+
+        <ul>
+          <li>
+            <strong>ACS-side validation infrastructure.</strong>
+            For the ACS to validate a VP Token, it needs access to the credential issuer's public keys
+            and a Trust Registry to confirm that a given issuer is authorised for a given credential type.
+            How this PKI layer is bootstrapped and governed across jurisdictions is a non-trivial problem.
+            EMVCo's existing Certificate Authority infrastructure may offer a precedent.
+          </li>
+          <li>
+            <strong>DS transparency.</strong>
+            In the current design, the Directory Server forwards the AReq as-is.
+            A future extension might have the DS validate the VP Token's trust chain before forwarding,
+            reducing per-ACS infrastructure requirements. Specifying this would require a formal
+            change to the DS processing rules.
+          </li>
+          <li>
+            <strong>iFrame / Universal App Link conflict.</strong>
+            As noted in the EMVCo white paper, the 3DS method frame iFrame's sandbox attributes
+            prevent direct invocation of the wallet via Universal App Link in v2.3.1.1.
+            A redirect-based alternative or a 3DS SDK-mediated invocation outside the iFrame may be required.
+          </li>
+          <li>
+            <strong>Standards engagement timing.</strong>
+            Contributing to W3C or EMVCo working groups early can help shape how a proposal
+            is adopted into emerging specifications. The question of when to engage publicly —
+            through formal working group participation, responses to open items, or white papers —
+            involves tradeoffs between establishing a clear position and allowing time for
+            the concept to be validated in dialogue with key stakeholders first.
+          </li>
+          <li>
+            <strong>Wallet invocation in low-friction environments.</strong>
+            For frictionless transactions, invoking an external wallet adds latency and a potential
+            user interaction step. A pre-authorised presentation model — where the cardholder
+            pre-configures selective disclosures that the wallet can surface automatically
+            for defined merchant categories — may be necessary to preserve the frictionless experience
+            that issuers and merchants depend on.
+          </li>
+        </ul>
+
+        <!-- ─────────────────────────────────────────────── -->
+        <h2>8. Conclusion</h2>
+
+        <p>
+          The current EMV 3-D Secure data model treats merchant-declared attributes as the primary
+          input to issuer risk models. This is a structural weakness: the data is unverified, potentially
+          stale, format-inconsistent, and increasingly misaligned with privacy regulations.
+        </p>
+
+        <p>
+          EMVCo appears to have implicitly acknowledged these limitations through the Attribute Verification
+          Message Extension.
+          The missing piece is a standardised carrier format that allows cryptographically attested
+          Verifiable Presentations to travel within existing 3DS message fields.
+        </p>
+
+        <p>
+          W3C VP Tokens encoded as SD-JWT-VCs, carried in <code>threeDSRequestorAuthenticationInfo</code>
+          with Authentication Method 10, constitute a backward-compatible, specification-aligned
+          proposal for filling that gap. The approach requires no new core message fields for an initial
+          implementation, is compatible with multiple APAC identity frameworks, and aligns
+          with the GDPR data minimisation principles that are becoming a baseline expectation across markets.
+        </p>
+
+        <p>
+          I am sharing this as an opening position for discussion, not a finished specification.
+          The open questions in Section 7 are real, and working through them will require
+          collaboration across the ACS operator, wallet provider, credential issuer, and merchant communities.
+          If you are working on related problems — whether in the 3DS specification space,
+          the W3C SPC or VC working groups, or APAC digital identity programmes —
+          I would welcome the conversation.
+        </p>
+
+        <hr style="border:none; border-top:1px solid var(--border); margin: 2.5rem 0;" />
+
+        <p style="font-size:0.85rem; color:var(--text-muted);">
+          <em>
+            The author works in the payments and digital identity space in APAC/Japan.
+            This article reflects personal analysis and does not represent any employer or standards body.
+            Feedback and corrections are welcome — please reach out via
+            <a href="https://www.linkedin.com/in/yuya-nakada-a0a177408" target="_blank" rel="noopener">LinkedIn</a>
+            or open an issue on <a href="https://github.com/nakada-yuya-vc" target="_blank" rel="noopener">GitHub</a>.
+          </em>
+        </p>
+
+      </div><!-- /.article-body -->
+
+    </article>
+  </main>
+
+  <!-- ── Footer ──────────────────────────────────────────── -->
+  <footer class="site-footer">
+    <div class="footer-inner">
+      <ul class="footer-links">
+        <li><a href="https://www.linkedin.com/in/yuya-nakada-a0a177408" target="_blank" rel="noopener">LinkedIn</a></li>
+        <li><a href="https://github.com/nakada-yuya-vc" target="_blank" rel="noopener">GitHub</a></li>
+      </ul>
+      <span class="footer-copy">&copy; 2026 Yuya Nakada</span>
+    </div>
+  </footer>
+
+</div>
+
+</body>
+</html>
